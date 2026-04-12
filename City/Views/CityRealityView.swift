@@ -2,8 +2,10 @@ import SwiftUI
 import RealityKit
 
 // Camera constants — kept in sync between setupScene and rayPlaneIntersect.
-private let kCameraPosition = SIMD3<Float>(0, 35, 35)
-private let kCameraFovYDeg: Float = 55
+// Position (0, 22, 38) gives ~30° elevation: enough to see building sides
+// while still showing a wide city view.
+private let kCameraPosition = SIMD3<Float>(0, 22, 38)
+private let kCameraFovYDeg: Float = 50
 
 struct CityRealityView: View {
     var grid: CityGrid
@@ -29,11 +31,13 @@ struct CityRealityView: View {
                 let floor = ModelEntity(mesh: floorMesh, materials: [floorMat])
                 floor.name = "floor"
 
-                // Isometric camera: (0, 35, 35) tilted -45° around X, looking at origin.
+                // Camera at ~30° elevation so building sides are visible.
+                // Rotation angle = atan2(22, 38) ≈ 30° → rotate -30° around X.
                 let camera = PerspectiveCamera()
                 camera.camera.fieldOfViewInDegrees = kCameraFovYDeg
                 camera.position = kCameraPosition
-                camera.orientation = simd_quatf(angle: -.pi / 4, axis: SIMD3<Float>(1, 0, 0))
+                let pitch = -atan2(kCameraPosition.y, kCameraPosition.z)
+                camera.orientation = simd_quatf(angle: pitch, axis: SIMD3<Float>(1, 0, 0))
 
                 // Directional light from above-left.
                 let lightEntity = Entity()
