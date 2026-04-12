@@ -17,11 +17,43 @@ struct CityRealityView: View {
     var body: some View {
         GeometryReader { geo in
             RealityView { content in
-                setupScene(content: content)
+                // RealityViewContent's concrete type is inferred by the compiler;
+                // we must not name it explicitly in a separate function signature.
+                let gridSize = Float(CityGrid.size) * CityGrid.cellSize
+
+                // Floor
+                let floorMesh = MeshResource.generatePlane(width: gridSize, depth: gridSize)
+                var floorMat = PhysicallyBasedMaterial()
+                floorMat.baseColor = .init(tint: .init(white: 0.18, alpha: 1))
+                floorMat.roughness = .init(floatLiteral: 0.95)
+                let floor = ModelEntity(mesh: floorMesh, materials: [floorMat])
+                floor.name = "floor"
+
+                // Isometric camera: (0, 35, 35) tilted -45° around X, looking at origin.
+                let camera = PerspectiveCamera()
+                camera.camera.fieldOfViewInDegrees = kCameraFovYDeg
+                camera.position = kCameraPosition
+                camera.orientation = simd_quatf(angle: -.pi / 4, axis: SIMD3<Float>(1, 0, 0))
+
+                // Directional light from above-left.
+                let lightEntity = Entity()
+                var lightComp = DirectionalLightComponent()
+                lightComp.intensity = 2_500
+                lightEntity.components.set(lightComp)
+                lightEntity.orientation = simd_quatf(
+                    angle: -.pi / 3,
+                    axis: normalize(SIMD3<Float>(1, 0.2, 0))
+                )
+
+                let root = AnchorEntity(world: .zero)
+                root.addChild(floor)
+                root.addChild(buildingsRoot)
+                root.addChild(camera)
+                root.addChild(lightEntity)
+                content.add(root)
             }
             // Tap is handled via an invisible overlay so we can receive a plain
-            // CGPoint and then unproject it ourselves — avoiding any dependence on
-            // EntityTargetValue.location3D whose availability varies by iOS build.
+            // CGPoint and unproject it ourselves into the y=0 world plane.
             .overlay {
                 Color.clear
                     .contentShape(Rectangle())
@@ -37,44 +69,6 @@ struct CityRealityView: View {
         .task {
             await runHeartbeat()
         }
-    }
-
-    // MARK: - Scene setup
-
-    private func setupScene(content: RealityViewContent) {
-        let gridSize = Float(CityGrid.size) * CityGrid.cellSize
-
-        // Floor — a flat plane covering the whole grid.
-        let floorMesh = MeshResource.generatePlane(width: gridSize, depth: gridSize)
-        var floorMat = PhysicallyBasedMaterial()
-        floorMat.baseColor = .init(tint: .init(white: 0.18, alpha: 1))
-        floorMat.roughness = .init(floatLiteral: 0.95)
-
-        let floor = ModelEntity(mesh: floorMesh, materials: [floorMat])
-        floor.name = "floor"
-
-        // Isometric camera: (0, 35, 35) tilted -45° around X, looking at origin.
-        let camera = PerspectiveCamera()
-        camera.camera.fieldOfViewInDegrees = kCameraFovYDeg
-        camera.position = kCameraPosition
-        camera.orientation = simd_quatf(angle: -.pi / 4, axis: SIMD3<Float>(1, 0, 0))
-
-        // Directional light from above-left.
-        let lightEntity = Entity()
-        var lightComp = DirectionalLightComponent()
-        lightComp.intensity = 2_500
-        lightEntity.components.set(lightComp)
-        lightEntity.orientation = simd_quatf(
-            angle: -.pi / 3,
-            axis: normalize(SIMD3<Float>(1, 0.2, 0))
-        )
-
-        let root = AnchorEntity(world: .zero)
-        root.addChild(floor)
-        root.addChild(buildingsRoot)
-        root.addChild(camera)
-        root.addChild(lightEntity)
-        content.add(root)
     }
 
     // MARK: - Ray-plane intersection

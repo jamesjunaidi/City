@@ -1,5 +1,4 @@
 import SwiftUI
-import RealityKit
 
 @main
 struct CityApp: App {
