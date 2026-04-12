@@ -1,4 +1,5 @@
 import SwiftUI
+import RealityKit
 
 @main
 struct CityApp: App {
@@ -7,7 +8,8 @@ struct CityApp: App {
         BuildingComponent.registerComponent()
     }
 
-    var body: some Scene {
+    // Qualify explicitly — both SwiftUI and RealityKit export a type named `Scene`.
+    var body: some SwiftUI.Scene {
         WindowGroup {
             ContentView()
         }
