@@ -49,7 +49,9 @@ struct CityRealityView: View {
                     axis: normalize(SIMD3<Float>(1, 0.2, 0))
                 )
 
-                let root = AnchorEntity(world: .zero)
+                // AnchorEntity(world:) requires an active ARKit session and
+                // will fault in a non-AR RealityView. Use a plain Entity instead.
+                let root = Entity()
                 root.addChild(floor)
                 root.addChild(buildingsRoot)
                 root.addChild(camera)
