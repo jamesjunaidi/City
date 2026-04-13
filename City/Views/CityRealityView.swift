@@ -110,13 +110,10 @@ struct CityRealityView: View {
         guard let coord = grid.gridCoordinate(from: worldPos) else { return }
         guard grid.cell(at: coord.x, y: coord.y)?.zone == .empty else { return }
 
-        let zone = selectedZone
-        Task { @MainActor in
-            let cost = zone.buildCost
-            if cost > 0 { guard await engine.spend(cost) else { return } }
-            grid.setZone(zone, at: coord.x, y: coord.y)
-            spawnBuilding(at: coord.x, y: coord.y, zone: zone)
-        }
+        let cost = selectedZone.buildCost
+        if cost > 0 { guard engine.spend(cost) else { return } }
+        grid.setZone(selectedZone, at: coord.x, y: coord.y)
+        spawnBuilding(at: coord.x, y: coord.y, zone: selectedZone)
     }
 
     private func spawnBuilding(at x: Int, y: Int, zone: ZoneType) {
@@ -166,8 +163,7 @@ struct CityRealityView: View {
     private func runHeartbeat() async {
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(2))
-            let snapshot = grid.cells
-            let result   = await engine.tick(cells: snapshot)
+            let result = engine.tick(grid: grid)   // synchronous — already on MainActor
             for upgrade in result.upgrades {
                 grid.upgradeCell(at: upgrade.x, y: upgrade.y)
                 upgradeBuilding(at: upgrade.x, y: upgrade.y)

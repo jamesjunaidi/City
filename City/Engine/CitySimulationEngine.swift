@@ -1,37 +1,34 @@
 import Foundation
+import Observation
 
-struct SimulationResult: Sendable {
-    let treasury: Double
-    let population: Int
-    let day: Int
-    let commercialDemand: Int
-    let residentialDemand: Int
-    let upgrades: [(x: Int, y: Int)]
-    let taxCollected: Double
-}
-
-// Actor isolates heavy simulation math off the main thread.
-actor CitySimulationEngine {
+// @Observable so it can be stored safely in @State.
+// SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor means all methods already
+// run on the main thread — a separate actor boundary is unnecessary and
+// causes ARC corruption when SwiftUI copies the view struct across renders.
+@Observable
+final class CitySimulationEngine {
     private(set) var treasury: Double = 10_000
     private(set) var population: Int = 0
     private(set) var day: Int = 0
     private(set) var commercialDemand: Int = 0
     private(set) var residentialDemand: Int = 0
 
-    /// Returns false if insufficient funds.
+    /// Returns false and leaves treasury unchanged if funds are insufficient.
+    @discardableResult
     func spend(_ amount: Double) -> Bool {
         guard treasury >= amount else { return false }
         treasury -= amount
-        return true }
+        return true
+    }
 
-    /// Takes a snapshot of cells so the grid never crosses the actor boundary.
-    func tick(cells: [[CityCell]]) -> SimulationResult {
+    /// Advances one game day and returns the result.
+    func tick(grid: CityGrid) -> SimulationResult {
         day += 1
         var taxCollected: Double = 0
         var upgrades: [(x: Int, y: Int)] = []
 
-        let flat = cells.flatMap { $0 }
-        let residential = flat.filter { $0.zone == .residential }
+        let flat = grid.cells.flatMap { $0 }
+        let residential  = flat.filter { $0.zone == .residential }
         let commercialCnt = flat.filter { $0.zone == .commercial }.count
         let industrialCnt = flat.filter { $0.zone == .industrial }.count
 
@@ -56,20 +53,14 @@ actor CitySimulationEngine {
             treasury += taxCollected
         }
 
-        // Upgrade mechanic: residential with road neighbours may level up
+        // Upgrade mechanic: residential cells adjacent to a road may level up
         for cell in residential where cell.level < 3 {
-            let hasRoad = [
-                (cell.x - 1, cell.y), (cell.x + 1, cell.y),
-                (cell.x, cell.y - 1), (cell.x, cell.y + 1)
-            ].contains { nx, ny in
-                flat.first { $0.x == nx && $0.y == ny }?.zone == .road
-            }
-            if hasRoad, Double.random(in: 0...1) < 0.02 {
+            if grid.hasRoadAccess(at: cell.x, y: cell.y),
+               Double.random(in: 0...1) < 0.02 {
                 upgrades.append((cell.x, cell.y))
             }
         }
 
-        // Recalculate population
         population = residential.reduce(0) { $0 + ($1.level + 1) * 4 }
 
         return SimulationResult(
@@ -82,4 +73,14 @@ actor CitySimulationEngine {
             taxCollected: taxCollected
         )
     }
+}
+
+struct SimulationResult {
+    let treasury: Double
+    let population: Int
+    let day: Int
+    let commercialDemand: Int
+    let residentialDemand: Int
+    let upgrades: [(x: Int, y: Int)]
+    let taxCollected: Double
 }
