@@ -7,7 +7,7 @@ final class CityGrid {
     static let size = 50
     static let cellSize: Float = 1.0
 
-    var cells: [[CityCell]]
+    private(set) var cells: [[CityCell]]
 
     init() {
         cells = (0..<Self.size).map { x in
@@ -24,12 +24,16 @@ final class CityGrid {
 
     func setZone(_ zone: ZoneType, at x: Int, y: Int) {
         guard x >= 0, x < Self.size, y >= 0, y < Self.size else { return }
-        cells[x][y].zone = zone
+        var updated = cells[x][y]
+        updated.zone = zone
+        cells[x][y] = updated
     }
 
     func upgradeCell(at x: Int, y: Int) {
         guard x >= 0, x < Self.size, y >= 0, y < Self.size else { return }
-        cells[x][y].level += 1
+        var updated = cells[x][y]
+        updated.level += 1
+        cells[x][y] = updated
     }
 
     /// Grid (0,0) → world (-24.5, 0, -24.5). Center of grid is at origin.
@@ -57,7 +61,13 @@ final class CityGrid {
         }
     }
 
-    var residentialCount: Int { cells.flatMap { $0 }.filter { $0.zone == .residential }.count }
-    var commercialCount:  Int { cells.flatMap { $0 }.filter { $0.zone == .commercial  }.count }
-    var industrialCount:  Int { cells.flatMap { $0 }.filter { $0.zone == .industrial  }.count }
+    var residentialCount: Int {
+        cells.lazy.flatMap { $0 }.filter { $0.zone == .residential }.count
+    }
+    var commercialCount: Int {
+        cells.lazy.flatMap { $0 }.filter { $0.zone == .commercial }.count
+    }
+    var industrialCount: Int {
+        cells.lazy.flatMap { $0 }.filter { $0.zone == .industrial }.count
+    }
 }

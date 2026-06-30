@@ -6,7 +6,6 @@ private let kCameraPosition = SIMD3<Float>(0, 22, 38)
 private let kCameraFovYDeg: Float = 50
 
 // Holds RealityKit object references that must be created inside the make closure.
-// Using a class so @State owns the box, not the entities themselves.
 private final class SceneState: @unchecked Sendable {
     var buildingsRoot: Entity?
 }
@@ -15,19 +14,14 @@ struct CityRealityView: View {
     var grid: CityGrid
     @Binding var selectedZone: ZoneType
     let engine: CitySimulationEngine
-    let onSimulationResult: (SimulationResult) -> Void
 
     @State private var scene = SceneState()
 
     var body: some View {
         GeometryReader { geo in
             RealityView { content in
-                // ⚠️ ALL Entity/Material creation must happen here —
-                // RealityKit's runtime is not yet live when @State initialises.
-
                 let gridSize = Float(CityGrid.size) * CityGrid.cellSize
 
-                // Floor
                 let floor = ModelEntity(
                     mesh: .generatePlane(width: gridSize, depth: gridSize),
                     materials: [SimpleMaterial(color: .init(white: 0.18, alpha: 1),
@@ -35,11 +29,9 @@ struct CityRealityView: View {
                 )
                 floor.name = "floor"
 
-                // Buildings container — stored so spawnBuilding can reach it.
                 let buildings = Entity()
                 scene.buildingsRoot = buildings
 
-                // Isometric camera (~30° elevation).
                 let camera = PerspectiveCamera()
                 camera.camera.fieldOfViewInDegrees = kCameraFovYDeg
                 camera.position = kCameraPosition
@@ -47,7 +39,6 @@ struct CityRealityView: View {
                 camera.orientation = simd_quatf(angle: pitch,
                                                 axis: SIMD3<Float>(1, 0, 0))
 
-                // Directional light
                 let light = Entity()
                 var lightComp = DirectionalLightComponent()
                 lightComp.intensity = 2_500
@@ -61,6 +52,9 @@ struct CityRealityView: View {
                 root.addChild(camera)
                 root.addChild(light)
                 content.add(root)
+            } update: { content in
+                guard let root = scene.buildingsRoot else { return }
+                rebuildEntities(from: root, grid: grid)
             }
             .overlay {
                 Color.clear
@@ -103,15 +97,30 @@ struct CityRealityView: View {
         return kCameraPosition + t * rayDir
     }
 
-    // MARK: - Placement
+    // MARK: - Placement & Bulldoze
 
     private func handleTap(at worldPos: SIMD3<Float>) {
         guard selectedZone != .empty else { return }
         guard let coord = grid.gridCoordinate(from: worldPos) else { return }
+
+        if selectedZone == .bulldoze {
+            let cell = grid.cell(at: coord.x, y: coord.y)
+            guard let cell, cell.zone != .empty, cell.zone != .road else { return }
+            removeBuilding(at: coord.x, y: coord.y)
+            grid.setZone(.empty, at: coord.x, y: coord.y)
+            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+            return
+        }
+
         guard grid.cell(at: coord.x, y: coord.y)?.zone == .empty else { return }
 
         let cost = selectedZone.buildCost
-        if cost > 0 { guard engine.spend(cost) else { return } }
+        if cost > 0 {
+            guard engine.spend(cost) else {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                return
+            }
+        }
         grid.setZone(selectedZone, at: coord.x, y: coord.y)
         spawnBuilding(at: coord.x, y: coord.y, zone: selectedZone)
     }
@@ -132,13 +141,13 @@ struct CityRealityView: View {
             mesh  = .generateBox(width: 0.8, height: 1.2, depth: 0.8);  halfH = 0.6
         case .industrial:
             mesh  = .generateBox(width: 0.85, height: 1.0, depth: 0.85); halfH = 0.5
-        case .empty:
+        case .empty, .bulldoze:
             return
         }
 
         let entity = ModelEntity(
             mesh: mesh,
-            materials: [SimpleMaterial(color: UIColor(zone.color), isMetallic: false)]
+            materials: [SimpleMaterial(color: zoneColor(zone), isMetallic: false)]
         )
         entity.name     = "building_\(x)_\(y)"
         entity.position = SIMD3<Float>(pos.x, halfH, pos.z)
@@ -158,23 +167,64 @@ struct CityRealityView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
+    private func removeBuilding(at x: Int, y: Int) {
+        guard let root = scene.buildingsRoot else { return }
+        guard let entity = findEntity(atX: x, y: y, in: root) else { return }
+        entity.removeFromParent()
+    }
+
+    private func findEntity(atX x: Int, y: Int, in root: Entity) -> ModelEntity? {
+        for child in root.children {
+            if let model = child as? ModelEntity,
+               let comp = model.components[BuildingComponent.self],
+               comp.gridX == x, comp.gridY == y {
+                return model
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Entity rebuild (survives view recreation)
+
+    private func rebuildEntities(from root: Entity, grid: CityGrid) {
+        let existing = root.children.compactMap { child -> (Int, Int)? in
+            guard let model = child as? ModelEntity,
+                  let comp = model.components[BuildingComponent.self] else { return nil }
+            return (comp.gridX, comp.gridY)
+        }
+
+        for x in 0..<CityGrid.size {
+            for y in 0..<CityGrid.size {
+                let cell = grid.cells[x][y]
+                guard cell.zone != .empty, cell.zone != .road, cell.zone != .bulldoze else { continue }
+                if !existing.contains(where: { $0 == (x, y) }) {
+                    spawnBuilding(at: x, y: y, zone: cell.zone)
+                    if cell.level > 0 {
+                        let scale = pow(1.15, Float(cell.level))
+                        if let entity = findEntity(atX: x, y: y, in: root) {
+                            entity.scale = SIMD3<Float>(repeating: scale)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Simulation heartbeat
 
     private func runHeartbeat() async {
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(2))
-            let result = engine.tick(grid: grid)   // synchronous — already on MainActor
+            let result = engine.tick(grid: grid)
             for upgrade in result.upgrades {
-                grid.upgradeCell(at: upgrade.x, y: upgrade.y)
                 upgradeBuilding(at: upgrade.x, y: upgrade.y)
             }
-            onSimulationResult(result)
         }
     }
 
     private func upgradeBuilding(at x: Int, y: Int) {
-        guard let root   = scene.buildingsRoot,
-              let entity = root.findEntity(named: "building_\(x)_\(y)") as? ModelEntity
+        guard let root = scene.buildingsRoot,
+              let entity = findEntity(atX: x, y: y, in: root)
         else { return }
 
         let grown = entity.scale * 1.15
@@ -185,5 +235,19 @@ struct CityRealityView: View {
             duration: 0.4,
             timingFunction: .easeOut
         )
+    }
+
+    // MARK: - Color helper (iOS deployment-safe)
+
+    private func zoneColor(_ zone: ZoneType) -> UIColor {
+        #if canImport(UIKit)
+        if #available(iOS 17.0, *) {
+            return UIColor(zone.color)
+        } else {
+            return .systemGray
+        }
+        #else
+        return .systemGray
+        #endif
     }
 }

@@ -1,11 +1,8 @@
 import Foundation
 import Observation
 
-// @Observable so it can be stored safely in @State.
-// SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor means all methods already
-// run on the main thread — a separate actor boundary is unnecessary and
-// causes ARC corruption when SwiftUI copies the view struct across renders.
 @Observable
+@MainActor
 final class CitySimulationEngine {
     private(set) var treasury: Double = 10_000
     private(set) var population: Int = 0
@@ -25,12 +22,10 @@ final class CitySimulationEngine {
     func tick(grid: CityGrid) -> SimulationResult {
         day += 1
         var taxCollected: Double = 0
-        var upgrades: [(x: Int, y: Int)] = []
 
-        let flat = grid.cells.flatMap { $0 }
-        let residential  = flat.filter { $0.zone == .residential }
-        let commercialCnt = flat.filter { $0.zone == .commercial }.count
-        let industrialCnt = flat.filter { $0.zone == .industrial }.count
+        let residential  = grid.cells.flatMap { $0 }.filter { $0.zone == .residential }
+        let commercialCnt = grid.cells.flatMap { $0 }.filter { $0.zone == .commercial }.count
+        let industrialCnt = grid.cells.flatMap { $0 }.filter { $0.zone == .industrial }.count
 
         // Demand loop
         if residential.count > commercialCnt {
@@ -47,21 +42,30 @@ final class CitySimulationEngine {
 
         // Tax engine: fires every 30 game days
         if day % 30 == 0 {
-            for cell in flat where cell.zone != .empty && cell.zone != .road {
-                taxCollected += Double(cell.level + 1) * 10
+            for x in 0..<CityGrid.size {
+                for y in 0..<CityGrid.size {
+                    let cell = grid.cells[x][y]
+                    if cell.zone != .empty && cell.zone != .road {
+                        taxCollected += Double(cell.level + 1) * 10
+                    }
+                }
             }
             treasury += taxCollected
         }
 
         // Upgrade mechanic: residential cells adjacent to a road may level up
+        var upgrades: [(x: Int, y: Int)] = []
         for cell in residential where cell.level < 3 {
             if grid.hasRoadAccess(at: cell.x, y: cell.y),
                Double.random(in: 0...1) < 0.02 {
+                grid.upgradeCell(at: cell.x, y: cell.y)
                 upgrades.append((cell.x, cell.y))
             }
         }
 
-        population = residential.reduce(0) { $0 + ($1.level + 1) * 4 }
+        // Population computed AFTER upgrades are applied
+        let residentialCells = grid.cells.flatMap { $0 }.filter { $0.zone == .residential }
+        population = residentialCells.reduce(0) { $0 + ($1.level + 1) * 4 }
 
         return SimulationResult(
             treasury: treasury,

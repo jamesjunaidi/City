@@ -83,7 +83,11 @@ private struct BuildToolbar: View {
 
                 DividerLine()
 
-                BulldozeCard(isSelected: selectedZone == .empty && false) // placeholder hook
+                BulldozeCard(isSelected: selectedZone == .bulldoze) {
+                    let next: ZoneType = selectedZone == .bulldoze ? .empty : .bulldoze
+                    selectedZone = next
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
@@ -148,11 +152,10 @@ private struct ZoneCard: View {
 
 private struct BulldozeCard: View {
     let isSelected: Bool
+    let action: () -> Void
 
     var body: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
-        } label: {
+        Button(action: action) {
             VStack(spacing: 8) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16)
