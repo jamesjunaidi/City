@@ -1,0 +1,31 @@
+# GridCity — LLM Context Summary
+
+SwiftUI + SpriteKit isometric city-builder (iOS 17+). 50×50 grid, zone/road placement, tax/growth simulation.
+
+## Key Files
+- `CityApp.swift` — @main entry
+- `ContentView.swift` — owns scene/grid/engine, tick loop, home↔game toggle
+- `CityScene.swift` — SKScene: renders tiles, touch→grid, drag placement
+- `CityGrid.swift` — @Observable grid data + road scanning
+- `CitySimulationEngine.swift` — @Observable tick: growth, tax, RCI demand
+- `IsometricConfig.swift` — grid↔screen math, tile sizing
+- `SpriteCatalog.swift` — zone/level/bitmask → sprite name
+
+## Architecture
+- MVVM-like: SwiftUI views observe CityGrid + CitySimulationEngine
+- CityScene (SpriteKit) handles all rendering and touch, references grid + engine
+- Tick runs every 3s via Task.sleep in ContentView
+
+## Models
+- ZoneType: empty, road, residential, commercial, office, bulldoze
+- CityCell: x, y, zone, level(0-5), hasRoadAccess
+- InputMode: inspect, buildRoad, zone*, bulldoze
+- SimulationResult: funds, pop, demand, upgrades[]
+
+## Conventions
+- All sim code on @MainActor
+- Grid is 50×50, tile size 80×61
+- Starting funds: 20,000
+- No persistence, no tests, no undo
+- Sprites are Kenney isometric packs (CC0)
+- No external dependencies (iOS SDK only)
