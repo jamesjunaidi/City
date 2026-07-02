@@ -1,6 +1,6 @@
 import SwiftUI
 
-private let kBuildableZones: [ZoneType] = [.road, .residential, .commercial, .industrial]
+private let kBuildableZones: [ZoneType] = [.road, .residential, .commercial, .office]
 
 struct HUDView: View {
     let treasury: Double

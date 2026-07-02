@@ -139,8 +139,8 @@ struct CityRealityView: View {
             mesh  = .generateBox(width: 0.7, height: 0.8, depth: 0.7);  halfH = 0.4
         case .commercial:
             mesh  = .generateBox(width: 0.8, height: 1.2, depth: 0.8);  halfH = 0.6
-        case .industrial:
-            mesh  = .generateBox(width: 0.85, height: 1.0, depth: 0.85); halfH = 0.5
+        case .office:
+            mesh  = .generateBox(width: 0.8, height: 1.2, depth: 0.8);  halfH = 0.6
         case .empty, .bulldoze:
             return
         }

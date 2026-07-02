@@ -61,13 +61,32 @@ final class CityGrid {
         }
     }
 
+    func scanRoadAccess() {
+        for x in 0..<Self.size {
+            for y in 0..<Self.size {
+                let cell = cells[x][y]
+                guard cell.zone != .empty, cell.zone != .road else { continue }
+                var updated = cell
+                updated.hasRoadAccess = hasRoadAccess(at: x, y: y)
+                cells[x][y] = updated
+            }
+        }
+    }
+
+    func adjustLevel(at x: Int, y: Int, delta: Int) {
+        guard x >= 0, x < Self.size, y >= 0, y < Self.size else { return }
+        var updated = cells[x][y]
+        updated.level = max(0, min(5, updated.level + delta))
+        cells[x][y] = updated
+    }
+
     var residentialCount: Int {
         cells.lazy.flatMap { $0 }.filter { $0.zone == .residential }.count
     }
     var commercialCount: Int {
         cells.lazy.flatMap { $0 }.filter { $0.zone == .commercial }.count
     }
-    var industrialCount: Int {
-        cells.lazy.flatMap { $0 }.filter { $0.zone == .industrial }.count
+    var officeCount: Int {
+        cells.lazy.flatMap { $0 }.filter { $0.zone == .office }.count
     }
 }

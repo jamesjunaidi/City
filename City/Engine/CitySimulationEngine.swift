@@ -25,7 +25,7 @@ final class CitySimulationEngine {
 
         let residential  = grid.cells.flatMap { $0 }.filter { $0.zone == .residential }
         let commercialCnt = grid.cells.flatMap { $0 }.filter { $0.zone == .commercial }.count
-        let industrialCnt = grid.cells.flatMap { $0 }.filter { $0.zone == .industrial }.count
+        let officeCnt = grid.cells.flatMap { $0 }.filter { $0.zone == .office }.count
 
         // Demand loop
         if residential.count > commercialCnt {
@@ -33,7 +33,7 @@ final class CitySimulationEngine {
         } else {
             commercialDemand = max(commercialDemand - 1, 0)
         }
-        let jobs = commercialCnt * 2 + industrialCnt * 3
+        let jobs = commercialCnt * 2 + officeCnt * 3
         if jobs > population {
             residentialDemand = min(residentialDemand + 1, 100)
         } else {
