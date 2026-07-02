@@ -140,7 +140,30 @@ struct CityRealityView: View {
         grid.setZone(zoneType, at: x, y: y)
         if zoneType == .road {
             spawnBuilding(at: x, y: y, zone: zoneType)
+        } else {
+            spawnLotMarker(at: x, y: y, zone: zoneType)
         }
+    }
+
+    private func spawnLotMarker(at x: Int, y: Int, zone: ZoneType) {
+        guard let root = scene.buildingsRoot else { return }
+        let pos = grid.worldPosition(for: x, y: y)
+
+        let mesh = MeshResource.generatePlane(width: CityGrid.cellSize * 0.9,
+                                              depth: CityGrid.cellSize * 0.9)
+        let baseColor = zoneColor(zone)
+        let tinted = baseColor.withAlphaComponent(0.3)
+        let material = SimpleMaterial(color: tinted, isMetallic: false)
+
+        let entity = ModelEntity(mesh: mesh, materials: [material])
+        entity.name     = "lotmarker_\(x)_\(y)"
+        entity.position = SIMD3<Float>(pos.x, 0.01, pos.z)
+        root.addChild(entity)
+    }
+
+    private func removeLotMarker(at x: Int, y: Int) {
+        guard let root = scene.buildingsRoot else { return }
+        root.children.first { $0.name == "lotmarker_\(x)_\(y)" }?.removeFromParent()
     }
 
     private func spawnBuilding(at x: Int, y: Int, zone: ZoneType) {
@@ -187,8 +210,10 @@ struct CityRealityView: View {
 
     private func removeBuilding(at x: Int, y: Int) {
         guard let root = scene.buildingsRoot else { return }
-        guard let entity = findEntity(atX: x, y: y, in: root) else { return }
-        entity.removeFromParent()
+        if let entity = findEntity(atX: x, y: y, in: root) {
+            entity.removeFromParent()
+        }
+        removeLotMarker(at: x, y: y)
     }
 
     private func findEntity(atX x: Int, y: Int, in root: Entity) -> ModelEntity? {
@@ -211,10 +236,22 @@ struct CityRealityView: View {
             return (comp.gridX, comp.gridY)
         }
 
+        let markerNames = Set(root.children.compactMap { child -> String? in
+            child.name.hasPrefix("lotmarker_") ? child.name : nil
+        })
+
         for x in 0..<CityGrid.size {
             for y in 0..<CityGrid.size {
                 let cell = grid.cells[x][y]
-                guard cell.zone != .empty, cell.zone != .bulldoze else { continue }
+                let markerName = "lotmarker_\(x)_\(y)"
+
+                if cell.zone != .empty, cell.zone != .road, cell.zone != .bulldoze, cell.level == 0 {
+                    if !markerNames.contains(markerName) {
+                        spawnLotMarker(at: x, y: y, zone: cell.zone)
+                    }
+                    continue
+                }
+
                 guard cell.level > 0 || cell.zone == .road else { continue }
                 if !existing.contains(where: { $0 == (x, y) }) {
                     spawnBuilding(at: x, y: y, zone: cell.zone)
@@ -239,6 +276,7 @@ struct CityRealityView: View {
                 if upgrade.delta > 0 {
                     let cell = grid.cell(at: upgrade.x, y: upgrade.y)
                     if let cell, cell.level == 1 {
+                        removeLotMarker(at: upgrade.x, y: upgrade.y)
                         spawnBuilding(at: upgrade.x, y: upgrade.y, zone: cell.zone)
                     } else {
                         animateLevelChange(at: upgrade.x, y: upgrade.y, delta: 1)
