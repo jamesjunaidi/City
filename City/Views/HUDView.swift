@@ -1,18 +1,17 @@
 import SwiftUI
 
-private let kBuildableZones: [ZoneType] = [.road, .residential, .commercial, .office]
+private let kBuildableModes: [InputMode] = [.buildRoad, .zoneResidential, .zoneCommercial, .zoneOffice]
 
 struct HUDView: View {
     let treasury: Double
     let population: Int
-    let day: Int
-    @Binding var selectedZone: ZoneType
+    @Binding var inputMode: InputMode
 
     var body: some View {
         VStack(spacing: 0) {
-            StatsBar(treasury: treasury, population: population, day: day)
+            StatsBar(treasury: treasury, population: population)
             Spacer()
-            BuildToolbar(selectedZone: $selectedZone)
+            BuildToolbar(inputMode: $inputMode)
         }
     }
 }
@@ -22,7 +21,6 @@ struct HUDView: View {
 private struct StatsBar: View {
     let treasury: Double
     let population: Int
-    let day: Int
 
     var body: some View {
         HStack(spacing: 0) {
@@ -35,12 +33,6 @@ private struct StatsBar: View {
             StatPill(value: "\(population)",
                      icon: "person.2.fill",
                      tint: .cyan)
-
-            Spacer()
-
-            StatPill(value: "Day \(day)",
-                     icon: "calendar",
-                     tint: Color(white: 0.7))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -60,7 +52,7 @@ private struct StatPill: View {
                 .font(.system(size: 15, weight: .semibold))
             Text(value)
                 .font(.system(size: 15, weight: .semibold).monospacedDigit())
-                .foregroundStyle(.white)
+                .foregroundStyle(.black)
         }
     }
 }
@@ -68,24 +60,24 @@ private struct StatPill: View {
 // MARK: - Build toolbar
 
 private struct BuildToolbar: View {
-    @Binding var selectedZone: ZoneType
+    @Binding var inputMode: InputMode
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
-                ForEach(kBuildableZones, id: \.self) { zone in
-                    ZoneCard(zone: zone, isSelected: selectedZone == zone) {
-                        let next: ZoneType = selectedZone == zone ? .empty : zone
-                        selectedZone = next
+                ForEach(kBuildableModes, id: \.self) { mode in
+                    ZoneCard(mode: mode, isSelected: inputMode == mode) {
+                        let next: InputMode = inputMode == mode ? .inspect : mode
+                        inputMode = next
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
                 }
 
                 DividerLine()
 
-                BulldozeCard(isSelected: selectedZone == .bulldoze) {
-                    let next: ZoneType = selectedZone == .bulldoze ? .empty : .bulldoze
-                    selectedZone = next
+                BulldozeCard(isSelected: inputMode == .bulldoze) {
+                    let next: InputMode = inputMode == .bulldoze ? .inspect : .bulldoze
+                    inputMode = next
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 }
             }
@@ -104,9 +96,11 @@ private struct BuildToolbar: View {
 // MARK: - Zone card
 
 private struct ZoneCard: View {
-    let zone: ZoneType
+    let mode: InputMode
     let isSelected: Bool
     let action: () -> Void
+
+    private var zoneType: ZoneType { mode.zoneType ?? .road }
 
     var body: some View {
         Button(action: action) {
@@ -115,28 +109,28 @@ private struct ZoneCard: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16)
                         .fill(isSelected
-                              ? zone.color.opacity(0.25)
+                              ? zoneType.color.opacity(0.25)
                               : Color.white.opacity(0.07))
                         .frame(width: 64, height: 64)
                         .overlay(
                             RoundedRectangle(cornerRadius: 16)
-                                .stroke(isSelected ? zone.color : Color.white.opacity(0.12),
+                                .stroke(isSelected ? zoneType.color : Color.white.opacity(0.12),
                                         lineWidth: isSelected ? 2 : 1)
                         )
 
-                    Image(systemName: zone.icon)
+                    Image(systemName: zoneType.icon)
                         .font(.system(size: 26, weight: .medium))
-                        .foregroundStyle(isSelected ? zone.color : Color.white.opacity(0.65))
+                        .foregroundStyle(isSelected ? zoneType.color : Color.white.opacity(0.65))
                         .symbolEffect(.bounce, value: isSelected)
                 }
 
                 // Label
                 VStack(spacing: 2) {
-                    Text(zone.displayName)
+                    Text(zoneType.displayName)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(isSelected ? zone.color : Color.white.opacity(0.75))
+                        .foregroundStyle(isSelected ? zoneType.color : Color.white.opacity(0.75))
 
-                    Text("$\(Int(zone.buildCost))")
+                    Text("$\(Int(zoneType.buildCost))")
                         .font(.system(size: 10, weight: .regular).monospacedDigit())
                         .foregroundStyle(Color.white.opacity(0.35))
                 }

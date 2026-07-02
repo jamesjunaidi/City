@@ -2,8 +2,8 @@ import SwiftUI
 import RealityKit
 
 // Camera constants — kept in sync with rayPlaneIntersect.
-private let kCameraPosition = SIMD3<Float>(0, 22, 38)
-private let kCameraFovYDeg: Float = 50
+private let kCameraPosition = SIMD3<Float>(0, 40, 0.01)
+private let kCameraFovYDeg: Float = 45
 
 // Holds RealityKit object references that must be created inside the make closure.
 private final class SceneState: @unchecked Sendable {
@@ -12,7 +12,7 @@ private final class SceneState: @unchecked Sendable {
 
 struct CityRealityView: View {
     var grid: CityGrid
-    @Binding var selectedZone: ZoneType
+    @Binding var inputMode: InputMode
     let engine: CitySimulationEngine
 
     @State private var scene = SceneState()
@@ -35,9 +35,7 @@ struct CityRealityView: View {
                 let camera = PerspectiveCamera()
                 camera.camera.fieldOfViewInDegrees = kCameraFovYDeg
                 camera.position = kCameraPosition
-                let pitch = -atan2(kCameraPosition.y, kCameraPosition.z)
-                camera.orientation = simd_quatf(angle: pitch,
-                                                axis: SIMD3<Float>(1, 0, 0))
+                camera.look(at: .zero, from: camera.position, relativeTo: nil)
 
                 let light = Entity()
                 var lightComp = DirectionalLightComponent()
@@ -100,10 +98,10 @@ struct CityRealityView: View {
     // MARK: - Placement & Bulldoze
 
     private func handleTap(at worldPos: SIMD3<Float>) {
-        guard selectedZone != .empty else { return }
+        guard inputMode != .inspect else { return }
         guard let coord = grid.gridCoordinate(from: worldPos) else { return }
 
-        if selectedZone == .bulldoze {
+        if inputMode == .bulldoze {
             let cell = grid.cell(at: coord.x, y: coord.y)
             guard let cell, cell.zone != .empty, cell.zone != .road else { return }
             removeBuilding(at: coord.x, y: coord.y)
@@ -112,17 +110,18 @@ struct CityRealityView: View {
             return
         }
 
+        guard let zoneType = inputMode.zoneType else { return }
         guard grid.cell(at: coord.x, y: coord.y)?.zone == .empty else { return }
 
-        let cost = selectedZone.buildCost
+        let cost = zoneType.buildCost
         if cost > 0 {
             guard engine.spend(cost) else {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
                 return
             }
         }
-        grid.setZone(selectedZone, at: coord.x, y: coord.y)
-        spawnBuilding(at: coord.x, y: coord.y, zone: selectedZone)
+        grid.setZone(zoneType, at: coord.x, y: coord.y)
+        spawnBuilding(at: coord.x, y: coord.y, zone: zoneType)
     }
 
     private func spawnBuilding(at x: Int, y: Int, zone: ZoneType) {
