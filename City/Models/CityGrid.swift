@@ -54,6 +54,15 @@ final class CityGrid {
         }
     }
 
+    func roadMask(at x: Int, y: Int) -> Int {
+        var mask = 0
+        if cell(at: x, y: y - 1)?.zone == .road { mask |= 1 }
+        if cell(at: x, y: y + 1)?.zone == .road { mask |= 2 }
+        if cell(at: x - 1, y: y)?.zone == .road { mask |= 4 }
+        if cell(at: x + 1, y: y)?.zone == .road { mask |= 8 }
+        return mask
+    }
+
     func scanRoadAccess() {
         for x in 0..<Self.size {
             for y in 0..<Self.size {
