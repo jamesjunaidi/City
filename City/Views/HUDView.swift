@@ -37,6 +37,9 @@ private struct StatsBar: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
         .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
     }
 }
 

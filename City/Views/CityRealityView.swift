@@ -271,7 +271,7 @@ struct CityRealityView: View {
                 guard !existingTrees.contains(cellId) else { continue }
                 guard let cell = grid.cell(at: x, y: y), cell.zone == .empty else { continue }
                 guard grid.hasRoadAccess(at: x, y: y) else { continue }
-                guard Int.random(in: 0..<100) < 30 else { continue }
+                guard (x * 31 + y * 71) % 100 < 30 else { continue }
                 spawnTree(at: x, y: y, in: root)
             }
         }
