@@ -138,7 +138,9 @@ struct CityRealityView: View {
             }
         }
         grid.setZone(zoneType, at: x, y: y)
-        spawnBuilding(at: x, y: y, zone: zoneType)
+        if zoneType == .road {
+            spawnBuilding(at: x, y: y, zone: zoneType)
+        }
     }
 
     private func spawnBuilding(at x: Int, y: Int, zone: ZoneType) {
@@ -212,11 +214,12 @@ struct CityRealityView: View {
         for x in 0..<CityGrid.size {
             for y in 0..<CityGrid.size {
                 let cell = grid.cells[x][y]
-                guard cell.zone != .empty, cell.zone != .road, cell.zone != .bulldoze else { continue }
+                guard cell.zone != .empty, cell.zone != .bulldoze else { continue }
+                guard cell.level > 0 || cell.zone == .road else { continue }
                 if !existing.contains(where: { $0 == (x, y) }) {
                     spawnBuilding(at: x, y: y, zone: cell.zone)
-                    if cell.level > 0 {
-                        let scale = pow(1.15, Float(cell.level))
+                    if cell.level > 1 {
+                        let scale = pow(1.15, Float(cell.level - 1))
                         if let entity = findEntity(atX: x, y: y, in: root) {
                             entity.scale = SIMD3<Float>(repeating: scale)
                         }
@@ -230,20 +233,35 @@ struct CityRealityView: View {
 
     private func runHeartbeat() async {
         while !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(3))
             let result = engine.tick(grid: grid)
             for upgrade in result.upgrades {
-                upgradeBuilding(at: upgrade.x, y: upgrade.y)
+                if upgrade.delta > 0 {
+                    let cell = grid.cell(at: upgrade.x, y: upgrade.y)
+                    if let cell, cell.level == 1 {
+                        spawnBuilding(at: upgrade.x, y: upgrade.y, zone: cell.zone)
+                    } else {
+                        animateLevelChange(at: upgrade.x, y: upgrade.y, delta: 1)
+                    }
+                } else {
+                    let cell = grid.cell(at: upgrade.x, y: upgrade.y)
+                    if let cell, cell.level == 0 {
+                        removeBuilding(at: upgrade.x, y: upgrade.y)
+                    } else {
+                        animateLevelChange(at: upgrade.x, y: upgrade.y, delta: -1)
+                    }
+                }
             }
         }
     }
 
-    private func upgradeBuilding(at x: Int, y: Int) {
+    private func animateLevelChange(at x: Int, y: Int, delta: Int) {
         guard let root = scene.buildingsRoot,
               let entity = findEntity(atX: x, y: y, in: root)
         else { return }
 
-        let grown = entity.scale * 1.15
+        let scaleFactor: Float = delta > 0 ? 1.15 : (1.0 / 1.15)
+        let grown = entity.scale * scaleFactor
         entity.move(
             to: Transform(scale: grown, rotation: entity.orientation,
                           translation: entity.position),

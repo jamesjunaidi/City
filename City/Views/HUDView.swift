@@ -3,13 +3,13 @@ import SwiftUI
 private let kBuildableModes: [InputMode] = [.buildRoad, .zoneResidential, .zoneCommercial, .zoneOffice]
 
 struct HUDView: View {
-    let treasury: Double
+    let playerFunds: Int
     let population: Int
     @Binding var inputMode: InputMode
 
     var body: some View {
         VStack(spacing: 0) {
-            StatsBar(treasury: treasury, population: population)
+            StatsBar(playerFunds: playerFunds, population: population)
             Spacer()
             BuildToolbar(inputMode: $inputMode)
         }
@@ -19,12 +19,12 @@ struct HUDView: View {
 // MARK: - Stats bar
 
 private struct StatsBar: View {
-    let treasury: Double
+    let playerFunds: Int
     let population: Int
 
     var body: some View {
         HStack(spacing: 0) {
-            StatPill(value: treasury.formatted(.number.precision(.fractionLength(0))),
+            StatPill(value: "\(playerFunds)",
                      icon: "dollarsign.circle.fill",
                      tint: .yellow)
 

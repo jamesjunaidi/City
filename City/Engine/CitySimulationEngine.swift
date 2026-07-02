@@ -4,87 +4,118 @@ import Observation
 @Observable
 @MainActor
 final class CitySimulationEngine {
-    private(set) var treasury: Double = 10_000
+    private(set) var playerFunds: Int = 20_000
     private(set) var population: Int = 0
-    private(set) var day: Int = 0
-    private(set) var commercialDemand: Int = 0
-    private(set) var residentialDemand: Int = 0
+    private(set) var taxRate: Float = 0.12
+    private(set) var demandResidential: Float = 0
+    private(set) var demandCommercial: Float = 0
+    private(set) var demandOffice: Float = 0
 
-    /// Returns false and leaves treasury unchanged if funds are insufficient.
+    private let baseTax: [ZoneType: Int] = [
+        .residential: 2,
+        .commercial: 4,
+        .office: 5
+    ]
+
     @discardableResult
     func spend(_ amount: Double) -> Bool {
-        guard treasury >= amount else { return false }
-        treasury -= amount
+        let intAmount = Int(amount)
+        guard playerFunds >= intAmount else { return false }
+        playerFunds -= intAmount
         return true
     }
 
-    /// Advances one game day and returns the result.
     func tick(grid: CityGrid) -> SimulationResult {
-        day += 1
-        var taxCollected: Double = 0
+        // System A: Infrastructure Dependency Scan
+        grid.scanRoadAccess()
 
-        let residential  = grid.cells.flatMap { $0 }.filter { $0.zone == .residential }
-        let commercialCnt = grid.cells.flatMap { $0 }.filter { $0.zone == .commercial }.count
-        let officeCnt = grid.cells.flatMap { $0 }.filter { $0.zone == .office }.count
+        var upgrades: [(x: Int, y: Int, delta: Int)] = []
 
-        // Demand loop
-        if residential.count > commercialCnt {
-            commercialDemand = min(commercialDemand + 1, 100)
-        } else {
-            commercialDemand = max(commercialDemand - 1, 0)
-        }
-        let jobs = commercialCnt * 2 + officeCnt * 3
-        if jobs > population {
-            residentialDemand = min(residentialDemand + 1, 100)
-        } else {
-            residentialDemand = max(residentialDemand - 1, 0)
-        }
+        // System B: Growth Engine
+        for x in 0..<CityGrid.size {
+            for y in 0..<CityGrid.size {
+                let cell = grid.cells[x][y]
+                guard cell.hasRoadAccess else { continue }
 
-        // Tax engine: fires every 30 game days
-        if day % 30 == 0 {
-            for x in 0..<CityGrid.size {
-                for y in 0..<CityGrid.size {
-                    let cell = grid.cells[x][y]
-                    if cell.zone != .empty && cell.zone != .road {
-                        taxCollected += Double(cell.level + 1) * 10
-                    }
+                let demand: Float
+                switch cell.zone {
+                case .residential: demand = demandResidential
+                case .commercial:  demand = demandCommercial
+                case .office:      demand = demandOffice
+                default:           continue
+                }
+
+                if demand > 10, cell.level < 5 {
+                    grid.adjustLevel(at: x, y: y, delta: 1)
+                    upgrades.append((x, y, 1))
+                } else if demand < -20, cell.level > 0 {
+                    grid.adjustLevel(at: x, y: y, delta: -1)
+                    upgrades.append((x, y, -1))
                 }
             }
-            treasury += taxCollected
         }
 
-        // Upgrade mechanic: residential cells adjacent to a road may level up
-        var upgrades: [(x: Int, y: Int)] = []
-        for cell in residential where cell.level < 3 {
-            if grid.hasRoadAccess(at: cell.x, y: cell.y),
-               Double.random(in: 0...1) < 0.02 {
-                grid.upgradeCell(at: cell.x, y: cell.y)
-                upgrades.append((cell.x, cell.y))
+        // System C: Financial & Macro Balance
+        let roadCount = grid.cells.lazy.flatMap { $0 }.filter { $0.zone == .road }.count
+        let roadUpkeep = roadCount * 1
+
+        var totalTax: Int = 0
+        for x in 0..<CityGrid.size {
+            for y in 0..<CityGrid.size {
+                let cell = grid.cells[x][y]
+                guard cell.zone != .empty, cell.zone != .road else { continue }
+                guard let base = baseTax[cell.zone] else { continue }
+                let taxFactor = 1.0 - (Double(taxRate) - 0.12)
+                let tileTax = Int(Double(base) * Double(cell.level) * taxFactor)
+                totalTax += tileTax
             }
         }
 
-        // Population computed AFTER upgrades are applied
-        let residentialCells = grid.cells.flatMap { $0 }.filter { $0.zone == .residential }
-        population = residentialCells.reduce(0) { $0 + ($1.level + 1) * 4 }
+        playerFunds += totalTax - roadUpkeep
+
+        // Recalculate RCI metrics
+        var totalPopulation: Int = 0
+        var totalJobs: Int = 0
+
+        for row in grid.cells {
+            for cell in row {
+                switch cell.zone {
+                case .residential:
+                    totalPopulation += cell.level * 10
+                case .commercial:
+                    totalJobs += cell.level * 5
+                case .office:
+                    totalJobs += cell.level * 8
+                default:
+                    break
+                }
+            }
+        }
+
+        population = totalPopulation
+
+        let taxImpact: Float = (taxRate - 0.12) * 15.0
+
+        demandResidential = max(-100, min(100, Float(totalJobs - totalPopulation) - taxImpact))
+        demandCommercial = max(-100, min(100, Float(totalPopulation - totalJobs) - taxImpact))
+        demandOffice = max(-100, min(100, Float(totalPopulation) * 0.2 - Float(totalJobs) - taxImpact))
 
         return SimulationResult(
-            treasury: treasury,
+            playerFunds: playerFunds,
             population: population,
-            day: day,
-            commercialDemand: commercialDemand,
-            residentialDemand: residentialDemand,
-            upgrades: upgrades,
-            taxCollected: taxCollected
+            demandResidential: demandResidential,
+            demandCommercial: demandCommercial,
+            demandOffice: demandOffice,
+            upgrades: upgrades
         )
     }
 }
 
 struct SimulationResult {
-    let treasury: Double
+    let playerFunds: Int
     let population: Int
-    let day: Int
-    let commercialDemand: Int
-    let residentialDemand: Int
-    let upgrades: [(x: Int, y: Int)]
-    let taxCollected: Double
+    let demandResidential: Float
+    let demandCommercial: Float
+    let demandOffice: Float
+    let upgrades: [(x: Int, y: Int, delta: Int)]
 }

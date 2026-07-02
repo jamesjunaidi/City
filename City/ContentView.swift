@@ -15,7 +15,7 @@ struct ContentView: View {
             .ignoresSafeArea()
 
             HUDView(
-                treasury:     engine.treasury,
+                playerFunds:  engine.playerFunds,
                 population:   engine.population,
                 inputMode: $inputMode
             )
