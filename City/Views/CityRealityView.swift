@@ -139,7 +139,8 @@ struct CityRealityView: View {
         }
         grid.setZone(zoneType, at: x, y: y)
         if zoneType == .road {
-            spawnBuilding(at: x, y: y, zone: zoneType)
+            spawnRoadEntity(at: x, y: y)
+            updateAdjacentRoads(at: x, y: y)
         } else {
             spawnLotMarker(at: x, y: y, zone: zoneType)
         }
@@ -166,23 +167,104 @@ struct CityRealityView: View {
         root.children.first { $0.name == "lotmarker_\(x)_\(y)" }?.removeFromParent()
     }
 
+    // MARK: - Road bitmasking
+
+    private func roadBitmask(at x: Int, y: Int) -> Int {
+        var mask = 0
+        if grid.cell(at: x, y: y - 1)?.zone == .road { mask |= 1 } // N
+        if grid.cell(at: x, y: y + 1)?.zone == .road { mask |= 2 } // S
+        if grid.cell(at: x - 1, y: y)?.zone == .road { mask |= 4 } // W
+        if grid.cell(at: x + 1, y: y)?.zone == .road { mask |= 8 } // E
+        return mask
+    }
+
+    private func spawnRoadEntity(at x: Int, y: Int) {
+        guard let root = scene.buildingsRoot else { return }
+        let pos = grid.worldPosition(for: x, y: y)
+
+        if let existing = findEntity(atX: x, y: y, in: root) {
+            existing.removeFromParent()
+        }
+
+        let roadEntity = Entity()
+        roadEntity.name = "building_\(x)_\(y)"
+        roadEntity.position = pos
+        roadEntity.components[BuildingComponent.self] = BuildingComponent(
+            type: .road, gridX: x, gridY: y
+        )
+
+        let roadColor = UIColor(white: 0.4, alpha: 1)
+        let roadMat = SimpleMaterial(color: roadColor, isMetallic: false)
+        let roadWidth: Float = 0.6
+        let armLength: Float = 0.2
+
+        let center = ModelEntity(
+            mesh: .generatePlane(width: roadWidth, depth: roadWidth),
+            materials: [roadMat]
+        )
+        center.position = SIMD3<Float>(0, 0.01, 0)
+        roadEntity.addChild(center)
+
+        let mask = roadBitmask(at: x, y: y)
+
+        if mask & 1 != 0 {
+            let arm = ModelEntity(
+                mesh: .generatePlane(width: roadWidth, depth: armLength),
+                materials: [roadMat]
+            )
+            arm.position = SIMD3<Float>(0, 0.01, -0.4)
+            roadEntity.addChild(arm)
+        }
+        if mask & 2 != 0 {
+            let arm = ModelEntity(
+                mesh: .generatePlane(width: roadWidth, depth: armLength),
+                materials: [roadMat]
+            )
+            arm.position = SIMD3<Float>(0, 0.01, 0.4)
+            roadEntity.addChild(arm)
+        }
+        if mask & 4 != 0 {
+            let arm = ModelEntity(
+                mesh: .generatePlane(width: armLength, depth: roadWidth),
+                materials: [roadMat]
+            )
+            arm.position = SIMD3<Float>(-0.4, 0.01, 0)
+            roadEntity.addChild(arm)
+        }
+        if mask & 8 != 0 {
+            let arm = ModelEntity(
+                mesh: .generatePlane(width: armLength, depth: roadWidth),
+                materials: [roadMat]
+            )
+            arm.position = SIMD3<Float>(0.4, 0.01, 0)
+            roadEntity.addChild(arm)
+        }
+
+        root.addChild(roadEntity)
+    }
+
+    private func updateAdjacentRoads(at x: Int, y: Int) {
+        let neighbors = [(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)]
+        for (nx, ny) in neighbors {
+            if grid.cell(at: nx, y: ny)?.zone == .road {
+                spawnRoadEntity(at: nx, y: ny)
+            }
+        }
+    }
+
     private func spawnBuilding(at x: Int, y: Int, zone: ZoneType) {
         guard let root = scene.buildingsRoot else { return }
         let pos = grid.worldPosition(for: x, y: y)
 
         let (mesh, halfH): (MeshResource, Float)
         switch zone {
-        case .road:
-            mesh  = .generatePlane(width: CityGrid.cellSize * 0.95,
-                                   depth: CityGrid.cellSize * 0.95)
-            halfH = 0.02
         case .residential:
             mesh  = .generateBox(width: 0.7, height: 0.8, depth: 0.7);  halfH = 0.4
         case .commercial:
             mesh  = .generateBox(width: 0.8, height: 1.2, depth: 0.8);  halfH = 0.6
         case .office:
             mesh  = .generateBox(width: 0.8, height: 1.2, depth: 0.8);  halfH = 0.6
-        case .empty, .bulldoze:
+        case .road, .empty, .bulldoze:
             return
         }
 
@@ -214,15 +296,16 @@ struct CityRealityView: View {
             entity.removeFromParent()
         }
         removeLotMarker(at: x, y: y)
+        if grid.cell(at: x, y: y)?.zone == .road {
+            updateAdjacentRoads(at: x, y: y)
+        }
     }
 
-    private func findEntity(atX x: Int, y: Int, in root: Entity) -> ModelEntity? {
+    private func findEntity(atX x: Int, y: Int, in root: Entity) -> Entity? {
         for child in root.children {
-            if let model = child as? ModelEntity,
-               let comp = model.components[BuildingComponent.self],
-               comp.gridX == x, comp.gridY == y {
-                return model
-            }
+            guard let comp = child.components[BuildingComponent.self],
+                  comp.gridX == x, comp.gridY == y else { continue }
+            return child
         }
         return nil
     }
@@ -231,8 +314,7 @@ struct CityRealityView: View {
 
     private func rebuildEntities(from root: Entity, grid: CityGrid) {
         let existing = root.children.compactMap { child -> (Int, Int)? in
-            guard let model = child as? ModelEntity,
-                  let comp = model.components[BuildingComponent.self] else { return nil }
+            guard let comp = child.components[BuildingComponent.self] else { return nil }
             return (comp.gridX, comp.gridY)
         }
 
@@ -254,13 +336,20 @@ struct CityRealityView: View {
 
                 guard cell.level > 0 || cell.zone == .road else { continue }
                 if !existing.contains(where: { $0 == (x, y) }) {
-                    spawnBuilding(at: x, y: y, zone: cell.zone)
-                    if cell.level > 1 {
-                        let scale = pow(1.15, Float(cell.level - 1))
-                        if let entity = findEntity(atX: x, y: y, in: root) {
-                            entity.scale = SIMD3<Float>(repeating: scale)
+                    if cell.zone == .road {
+                        spawnRoadEntity(at: x, y: y)
+                    } else {
+                        spawnBuilding(at: x, y: y, zone: cell.zone)
+                        if cell.level > 1 {
+                            let scale = pow(1.15, Float(cell.level - 1))
+                            if let entity = findEntity(atX: x, y: y, in: root) {
+                                entity.scale = SIMD3<Float>(repeating: scale)
+                            }
                         }
                     }
+                } else if cell.zone == .road {
+                    // Refresh road visuals — neighbors may have changed
+                    spawnRoadEntity(at: x, y: y)
                 }
             }
         }
