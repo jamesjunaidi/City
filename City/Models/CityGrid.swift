@@ -29,13 +29,6 @@ final class CityGrid {
         cells[x][y] = updated
     }
 
-    func upgradeCell(at x: Int, y: Int) {
-        guard x >= 0, x < Self.size, y >= 0, y < Self.size else { return }
-        var updated = cells[x][y]
-        updated.level += 1
-        cells[x][y] = updated
-    }
-
     /// Grid (0,0) → world (-24.5, 0, -24.5). Center of grid is at origin.
     func worldPosition(for x: Int, y: Int) -> SIMD3<Float> {
         let offset = Float(Self.size) / 2.0 * Self.cellSize
