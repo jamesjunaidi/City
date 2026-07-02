@@ -2,12 +2,14 @@ import SwiftUI
 import RealityKit
 
 // Camera constants — kept in sync with rayPlaneIntersect.
-private let kCameraPosition = SIMD3<Float>(0, 40, 0.01)
-private let kCameraFovYDeg: Float = 45
+private let kCameraPosition = SIMD3<Float>(30, 30, 30)
+private let kCameraFovYDeg: Float = 40
 
 // Holds RealityKit object references that must be created inside the make closure.
 private final class SceneState: @unchecked Sendable {
     var buildingsRoot: Entity?
+    var gridLinesRoot: Entity?
+    var foliageRoot: Entity?
 }
 
 struct CityRealityView: View {
@@ -22,16 +24,41 @@ struct CityRealityView: View {
         GeometryReader { geo in
             RealityView { content in
                 let gridSize = Float(CityGrid.size) * CityGrid.cellSize
+                let halfSize = gridSize / 2
 
                 let floor = ModelEntity(
                     mesh: .generatePlane(width: gridSize, depth: gridSize),
-                    materials: [SimpleMaterial(color: .init(white: 0.18, alpha: 1),
+                    materials: [SimpleMaterial(color: UIColor(red: 0.22, green: 0.25, blue: 0.2, alpha: 1),
                                                isMetallic: false)]
                 )
                 floor.name = "floor"
 
                 let buildings = Entity()
                 scene.buildingsRoot = buildings
+
+                let foliage = Entity()
+                scene.foliageRoot = foliage
+
+                let gridLines = Entity()
+                scene.gridLinesRoot = gridLines
+
+                let lineMat = SimpleMaterial(color: UIColor(white: 0.3, alpha: 0.4), isMetallic: false)
+                let lineW: Float = 0.015
+                for i in 0...CityGrid.size {
+                    let h = ModelEntity(
+                        mesh: .generateBox(width: gridSize, height: lineW, depth: lineW),
+                        materials: [lineMat]
+                    )
+                    h.position = SIMD3<Float>(0, 0.002, -halfSize + Float(i))
+                    gridLines.addChild(h)
+
+                    let v = ModelEntity(
+                        mesh: .generateBox(width: lineW, height: lineW, depth: gridSize),
+                        materials: [lineMat]
+                    )
+                    v.position = SIMD3<Float>(-halfSize + Float(i), 0.002, 0)
+                    gridLines.addChild(v)
+                }
 
                 let camera = PerspectiveCamera()
                 camera.camera.fieldOfViewInDegrees = kCameraFovYDeg
@@ -40,20 +67,27 @@ struct CityRealityView: View {
 
                 let light = Entity()
                 var lightComp = DirectionalLightComponent()
-                lightComp.intensity = 2_500
+                lightComp.intensity = 3_000
                 light.components.set(lightComp)
-                light.orientation = simd_quatf(angle: -.pi / 3,
-                                               axis: normalize(SIMD3<Float>(1, 0.2, 0)))
+                light.orientation = simd_quatf(angle: -.pi / 4,
+                                               axis: normalize(SIMD3<Float>(1, 0.5, 0.3)))
 
                 let root = Entity()
                 root.addChild(floor)
+                root.addChild(gridLines)
                 root.addChild(buildings)
+                root.addChild(foliage)
                 root.addChild(camera)
                 root.addChild(light)
                 content.add(root)
+
+                // Initial foliage pass
+                rebuildFoliage(in: foliage, grid: grid)
             } update: { content in
-                guard let root = scene.buildingsRoot else { return }
+                guard let root = scene.buildingsRoot,
+                      let foliage = scene.foliageRoot else { return }
                 rebuildEntities(from: root, grid: grid)
+                rebuildFoliage(in: foliage, grid: grid)
             }
             .overlay {
                 Color.clear
@@ -121,6 +155,7 @@ struct CityRealityView: View {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
                 return
             }
+            removeTree(at: x, y: y)
             removeBuilding(at: x, y: y)
             grid.setZone(.empty, at: x, y: y)
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
@@ -137,6 +172,7 @@ struct CityRealityView: View {
                 return
             }
         }
+        removeTree(at: x, y: y)
         grid.setZone(zoneType, at: x, y: y)
         if zoneType == .road {
             spawnRoadEntity(at: x, y: y)
@@ -165,6 +201,80 @@ struct CityRealityView: View {
     private func removeLotMarker(at x: Int, y: Int) {
         guard let root = scene.buildingsRoot else { return }
         root.children.first { $0.name == "lotmarker_\(x)_\(y)" }?.removeFromParent()
+    }
+
+    // MARK: - Foliage
+
+    private func removeTree(at x: Int, y: Int) {
+        guard let foliage = scene.foliageRoot else { return }
+        foliage.children.first { $0.name == "tree_\(x)_\(y)" }?.removeFromParent()
+    }
+
+    private func spawnTree(at x: Int, y: Int, in root: Entity) {
+        let pos = grid.worldPosition(for: x, y: y)
+
+        let treeEntity = Entity()
+        treeEntity.name = "tree_\(x)_\(y)"
+        treeEntity.position = pos
+
+        let trunk = ModelEntity(
+            mesh: .generateBox(width: 0.04, height: 0.1, depth: 0.04),
+            materials: [SimpleMaterial(color: UIColor(red: 0.4, green: 0.25, blue: 0.15, alpha: 1),
+                                       isMetallic: false)]
+        )
+        trunk.position = SIMD3<Float>(0, 0.05, 0)
+        treeEntity.addChild(trunk)
+
+        let green: CGFloat = 0.25 + CGFloat.random(in: 0...0.3)
+        let canopy = ModelEntity(
+            mesh: .generateSphere(radius: 0.13),
+            materials: [SimpleMaterial(color: UIColor(red: 0.12, green: green, blue: 0.1, alpha: 1),
+                                       isMetallic: false)]
+        )
+        canopy.position = SIMD3<Float>(0, 0.19, 0)
+        treeEntity.addChild(canopy)
+
+        let scale: Float = 0.8 + Float.random(in: 0...0.4)
+        treeEntity.scale = SIMD3<Float>(repeating: scale)
+        root.addChild(treeEntity)
+    }
+
+    private func rebuildFoliage(in root: Entity, grid: CityGrid) {
+        let existingTrees = Set(root.children.compactMap { child -> Int? in
+            guard child.name.hasPrefix("tree_") else { return nil }
+            let s = child.name.dropFirst(5)
+            guard let sep = s.firstIndex(of: "_") else { return nil }
+            guard let tx = Int(s[s.startIndex..<sep]),
+                  let ty = Int(s[s.index(after: sep)...]) else { return nil }
+            return ty * CityGrid.size + tx
+        })
+
+        var toRemove: [Entity] = []
+        for child in root.children {
+            guard child.name.hasPrefix("tree_") else { continue }
+            let s = child.name.dropFirst(5)
+            guard let sep = s.firstIndex(of: "_") else { continue }
+            guard let tx = Int(s[s.startIndex..<sep]),
+                  let ty = Int(s[s.index(after: sep)...]) else { continue }
+            let cell = grid.cell(at: tx, y: ty)
+            if cell == nil || cell!.zone != .empty {
+                toRemove.append(child)
+            }
+        }
+        for entity in toRemove {
+            entity.removeFromParent()
+        }
+
+        for x in 0..<CityGrid.size {
+            for y in 0..<CityGrid.size {
+                let cellId = y * CityGrid.size + x
+                guard !existingTrees.contains(cellId) else { continue }
+                guard let cell = grid.cell(at: x, y: y), cell.zone == .empty else { continue }
+                guard grid.hasRoadAccess(at: x, y: y) else { continue }
+                guard Int.random(in: 0..<100) < 30 else { continue }
+                spawnTree(at: x, y: y, in: root)
+            }
+        }
     }
 
     // MARK: - Road bitmasking
@@ -401,14 +511,12 @@ struct CityRealityView: View {
     // MARK: - Color helper (iOS deployment-safe)
 
     private func zoneColor(_ zone: ZoneType) -> UIColor {
-        #if canImport(UIKit)
-        if #available(iOS 17.0, *) {
-            return UIColor(zone.color)
-        } else {
-            return .systemGray
+        switch zone {
+        case .residential: return UIColor(red: 0.82, green: 0.72, blue: 0.62, alpha: 1) // warm beige
+        case .commercial:  return UIColor(red: 0.55, green: 0.65, blue: 0.75, alpha: 1) // cool blue-gray
+        case .office:      return UIColor(red: 0.45, green: 0.5,  blue: 0.6,  alpha: 1) // slate blue
+        case .road:        return UIColor(white: 0.35, alpha: 1)
+        default:           return UIColor(white: 0.5, alpha: 1)
         }
-        #else
-        return .systemGray
-        #endif
     }
 }
