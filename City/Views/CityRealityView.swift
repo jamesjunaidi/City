@@ -16,6 +16,7 @@ struct CityRealityView: View {
     let engine: CitySimulationEngine
 
     @State private var scene = SceneState()
+    @State private var touchedCells: Set<Int> = []
 
     var body: some View {
         GeometryReader { geo in
@@ -57,12 +58,15 @@ struct CityRealityView: View {
             .overlay {
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture { screenPos in
-                        guard let worldPos = rayPlaneIntersect(screenPos: screenPos,
-                                                               viewSize: geo.size)
-                        else { return }
-                        handleTap(at: worldPos)
-                    }
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                handleDrag(at: value.location, viewSize: geo.size)
+                            }
+                            .onEnded { _ in
+                                touchedCells.removeAll()
+                            }
+                    )
             }
         }
         .task {
@@ -97,21 +101,34 @@ struct CityRealityView: View {
 
     // MARK: - Placement & Bulldoze
 
-    private func handleTap(at worldPos: SIMD3<Float>) {
+    private func handleDrag(at screenPos: CGPoint, viewSize: CGSize) {
         guard inputMode != .inspect else { return }
+        guard let worldPos = rayPlaneIntersect(screenPos: screenPos, viewSize: viewSize) else { return }
         guard let coord = grid.gridCoordinate(from: worldPos) else { return }
 
+        let cellId = coord.y * CityGrid.size + coord.x
+        guard !touchedCells.contains(cellId) else { return }
+        touchedCells.insert(cellId)
+
+        applyAction(at: coord.x, y: coord.y)
+    }
+
+    private func applyAction(at x: Int, y: Int) {
         if inputMode == .bulldoze {
-            let cell = grid.cell(at: coord.x, y: coord.y)
+            let cell = grid.cell(at: x, y: y)
             guard let cell, cell.zone != .empty, cell.zone != .road else { return }
-            removeBuilding(at: coord.x, y: coord.y)
-            grid.setZone(.empty, at: coord.x, y: coord.y)
+            guard engine.spend(5) else {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                return
+            }
+            removeBuilding(at: x, y: y)
+            grid.setZone(.empty, at: x, y: y)
             UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
             return
         }
 
         guard let zoneType = inputMode.zoneType else { return }
-        guard grid.cell(at: coord.x, y: coord.y)?.zone == .empty else { return }
+        guard grid.cell(at: x, y: y)?.zone == .empty else { return }
 
         let cost = zoneType.buildCost
         if cost > 0 {
@@ -120,8 +137,8 @@ struct CityRealityView: View {
                 return
             }
         }
-        grid.setZone(zoneType, at: coord.x, y: coord.y)
-        spawnBuilding(at: coord.x, y: coord.y, zone: zoneType)
+        grid.setZone(zoneType, at: x, y: y)
+        spawnBuilding(at: x, y: y, zone: zoneType)
     }
 
     private func spawnBuilding(at x: Int, y: Int, zone: ZoneType) {
